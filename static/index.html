@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Practica Hotel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="logo">
+                    <span class="purple-dot"></span>
+                    <h1>Practica Hotel</h1>
+                </div>
+                <h2>Panel de Reservas</h2>
+                <div class="undo-controls" id="undo-area">
+                    <span>Deshacer: <strong id="undo-count">0</strong></span>
+                    <button class="btn-undo" id="undo-btn" disabled>Deshacer última</button>
+                </div>
+            </header>
+
+            <div class="content-container">
+                <section class="panel search-panel">
+                    <div class="panel-header">
+                        <h3>Buscador de Reservas</h3>
+                        <div class="search-box">
+                            <input type="text" id="inp-search" placeholder="Cliente, #Hab o YYYY-MM-DD">
+                            <button id="btn-search" class="btn-primary-small">Buscar</button>
+                            <button id="btn-clear-search" class="btn-secondary-small">Limpiar</button>
+                        </div>
+                    </div>
+                    <div id="search-results" class="search-results-list">
+                        <!-- Resultados de búsqueda aquí -->
+                    </div>
+                </section>
+
+                <section class="panel reserva-panel">
+                    <h3>Programar Estancia</h3>
+                    <form id="reserva-form" class="check-grid">
+                        <div class="field">
+                            <label for="inp-cliente">Nombre del Cliente</label>
+                            <input type="text" id="inp-cliente" placeholder="Ej: Juan Pérez" required>
+                        </div>
+                        <div class="field">
+                            <label for="inp-inicio">Fecha de Entrada (Check-in)</label>
+                            <input type="date" id="inp-inicio" required>
+                        </div>
+                        <div class="field">
+                            <label for="inp-fin">Fecha de Salida (Check-out)</label>
+                            <input type="date" id="inp-fin" required>
+                        </div>
+                        <div class="field">
+                            <label for="inp-tipo">Preferencia de Tipo</label>
+                            <select id="inp-tipo" name="tipo">
+                                <option value="">Ver todo mapa</option>
+                                <option value="Simple">Sencilla</option>
+                                <option value="Doble">Doble</option>
+                                <option value="Suite">Suite Premium</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Habitación Elegida</label>
+                            <div id="room-selection-display" class="room-display">Selecciona en el mapa</div>
+                            <input type="hidden" id="inp-numero-habitacion">
+                        </div>
+                        <button type="submit" class="btn-primary">Confirmar Reserva</button>
+                    </form>
+                </section>
+
+                <div class="dashboard-grid">
+                    <section class="panel habitaciones-panel">
+                        <h3>Mapa de Disponibilidad</h3>
+                        <div class="hab-grid" id="hab-container">
+                        </div>
+                    </section>
+
+                    <section class="panel logs-panel">
+                        <h3>Bitácora de Actividad</h3>
+                        <div class="logs-container" id="logs-list">
+                            <p class="empty">Esperando actividad...</p>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="panel log-panel">
+                    <div class="panel-header">
+                        <h3>Gestión de Reservas</h3>
+                        <div class="lifo-controls">
+                            <button id="permanent-delete-btn" class="btn-danger-text" disabled>Borrado Permanente</button>
+                        </div>
+                    </div>
+                    <div class="reservas-list" id="res-container">
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

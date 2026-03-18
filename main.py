@@ -1,159 +1,244 @@
-from datetime import datetime, timedelta
-import os
-
-import uvicorn
-from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-
-from logica import SistemaReservasHotel
+from datetime import datetime
 
 
-app = FastAPI(title="Practica Hotel")
+class PilaPersonalizada:
+    """Implementación de una pila con capacidad limitada."""
+
+    def __init__(self, capacidad=100):
+        self.capacidad = capacidad
+        self._datos = []
+
+    def push(self, item):
+        if self.is_full():
+            raise OverflowError("Pila llena")
+        self._datos.append(item)
+
+    def pop(self):
+        if self.is_empty():
+            raise IndexError("Pila vacía")
+        return self._datos.pop()
+
+    def peek(self):
+        if self.is_empty():
+            raise IndexError("Pila vacía")
+        return self._datos[-1]
+
+    def is_empty(self):
+        return len(self._datos) == 0
+
+    def is_full(self):
+        return len(self._datos) >= self.capacidad
+
+    def size(self):
+        return len(self._datos)
 
 
-# Crear carpeta static si no existe
-if not os.path.exists("static"):
-    os.makedirs("static")
+class Reserva:
+    """Representa una reserva de hotel."""
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+    def __init__(self, reserva_id, cliente, inicio, fin, habitacion, tipo):
+        self.reserva_id = reserva_id
+        self.cliente = cliente
+        self.inicio = inicio
+        self.fin = fin
+        self.habitacion = habitacion
+        self.tipo = tipo
 
-
-hotel = SistemaReservasHotel(db_name="hotel_web.db")
-
-
-@app.get("/")
-async def read_index():
-    """Devuelve la página principal."""
-    return FileResponse("static/index.html")
-
-
-@app.get("/api/estado")
-async def get_estado(inicio: str = None, fin: str = None):
-    """
-    Obtiene el estado del hotel en un rango de fechas.
-    """
-    hoy = datetime.now()
-
-    if not inicio:
-        inicio = hoy.strftime("%Y-%m-%d")
-
-    if not fin:
-        fin = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    reservas = []
-    temp = []
-
-    # Extraer reservas de la pila
-    while not hotel.pila_reservas_actuales.is_empty():
-        reserva = hotel.pila_reservas_actuales.pop()
-        reservas.append(reserva.to_dict())
-        temp.append(reserva)
-
-    # Restaurar la pila
-    for reserva in reversed(temp):
-        hotel.pila_reservas_actuales.push(reserva)
-
-    return {
-        "habitaciones": hotel.obtener_estado_por_rango(inicio, fin),
-        "reservas": reservas,
-        "logs": hotel.obtener_logs(),
-        "deshacer_count": hotel.pila_deshacer.size(),
-    }
-
-
-@app.get("/api/buscar")
-async def buscar(query: str):
-    """Busca reservas según un criterio."""
-    return hotel.buscar_reservas(query)
-
-
-@app.post("/api/reservar")
-async def reservar(
-    cliente: str = Form(...),
-    inicio: str = Form(...),
-    fin: str = Form(...),
-    tipo: str = Form(None),
-    numero_habitacion: int = Form(None),
-):
-    """
-    Realiza una reserva de habitación.
-    """
-    if tipo == "Cualquiera" or not tipo:
-        tipo = None
-
-    success = hotel.reservar_habitacion(
-        cliente,
-        inicio,
-        fin,
-        tipo,
-        numero_habitacion,
-    )
-
-    if success:
+    def to_dict(self):
         return {
-            "status": "success",
-            "message": f"Reserva para {cliente} completada.",
+            "id": self.reserva_id,
+            "cliente": self.cliente,
+            "inicio": self.inicio,
+            "fin": self.fin,
+            "habitacion": self.habitacion,
+            "tipo": self.tipo,
         }
 
-    raise HTTPException(
-        status_code=400,
-        detail="No disponible en esas fechas o tipo.",
-    )
 
+class SistemaReservasHotel:
+    """Sistema de gestión de reservas con soporte LIFO y deshacer."""
 
-@app.post("/api/cancelar/lifo")
-async def cancelar_lifo():
-    """Cancela la última reserva (LIFO)."""
-    if hotel.cancelar_reserva_lifo():
-        return {
-            "status": "success",
-            "message": "Última reserva enviada a la papelera.",
-        }
+    def __init__(self, db_name=None):
+        self.contador_reservas = 1
+        self.habitaciones = [
+            {"numero": 1, "tipo": "Simple"},
+            {"numero": 2, "tipo": "Simple"},
+            {"numero": 3, "tipo": "Doble"},
+            {"numero": 4, "tipo": "Doble"},
+            {"numero": 5, "tipo": "Suite"},
+            {"numero": 6, "tipo": "Suite"},
+        ]
+        self.pila_reservas_actuales = PilaPersonalizada()
+        self.pila_deshacer = PilaPersonalizada()
+        self.logs = []
 
-    raise HTTPException(
-        status_code=400,
-        detail="Nada que cancelar.",
-    )
+    def _fecha_valida(self, fecha):
+        try:
+            return datetime.strptime(fecha, "%Y-%m-%d")
+        except Exception:
+            return None
 
+    def _habitacion_disponible(self, inicio, fin, tipo=None, numero=None):
+        inicio_dt = self._fecha_valida(inicio)
+        fin_dt = self._fecha_valida(fin)
 
-@app.post("/api/borrar_definitivo")
-async def borrar_definitivo():
-    """Elimina definitivamente la última reserva cancelada."""
-    if hotel.borrar_definitivamente_lifo():
-        return {
-            "status": "success",
-            "message": "Reserva eliminada permanentemente.",
-        }
+        if not inicio_dt or not fin_dt:
+            return None
 
-    raise HTTPException(
-        status_code=400,
-        detail="Nada que borrar.",
-    )
+        ocupadas = []
+        temp = []
 
+        while not self.pila_reservas_actuales.is_empty():
+            r = self.pila_reservas_actuales.pop()
+            temp.append(r)
 
-@app.post("/api/deshacer")
-async def deshacer():
-    """Deshace la última cancelación."""
-    estado = hotel.deshacer_cancelacion()
+            r_inicio = self._fecha_valida(r.inicio)
+            r_fin = self._fecha_valida(r.fin)
 
-    if estado == "OK":
-        return {
-            "status": "success",
-            "message": "Acción deshecha.",
-        }
+            if not (fin_dt <= r_inicio or inicio_dt >= r_fin):
+                ocupadas.append(r.habitacion)
 
-    if estado == "OCCUPIED":
-        raise HTTPException(
-            status_code=400,
-            detail="Habitación ya ocupada en ese rango.",
+        for r in reversed(temp):
+            self.pila_reservas_actuales.push(r)
+
+        for h in self.habitaciones:
+            if numero and h["numero"] != numero:
+                continue
+            if tipo and h["tipo"] != tipo:
+                continue
+            if h["numero"] not in ocupadas:
+                return h
+
+        return None
+
+    def reservar_habitacion(self, cliente, inicio, fin=None, tipo=None, numero=None):
+        if not fin:
+            fin = inicio
+
+        if not self._fecha_valida(inicio) or not self._fecha_valida(fin):
+            return False
+
+        habitacion = self._habitacion_disponible(inicio, fin, tipo, numero)
+
+        if not habitacion:
+            return False
+
+        reserva = Reserva(
+            self.contador_reservas,
+            cliente,
+            inicio,
+            fin,
+            habitacion["numero"],
+            habitacion["tipo"],
         )
 
-    raise HTTPException(
-        status_code=400,
-        detail="Nada que deshacer.",
-    )
+        self.pila_reservas_actuales.push(reserva)
+        self.logs.append(f"Reserva creada: {reserva.reserva_id}")
+        self.contador_reservas += 1
 
+        return True
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    def cancelar_reserva(self, reserva_id):
+        temp = []
+        encontrada = None
+
+        while not self.pila_reservas_actuales.is_empty():
+            r = self.pila_reservas_actuales.pop()
+            if r.reserva_id == reserva_id:
+                encontrada = r
+                break
+            temp.append(r)
+
+        for r in reversed(temp):
+            self.pila_reservas_actuales.push(r)
+
+        if not encontrada:
+            return False
+
+        self.pila_deshacer.push(encontrada)
+        self.logs.append(f"Reserva cancelada: {reserva_id}")
+        return True
+
+    def cancelar_reserva_lifo(self):
+        if self.pila_reservas_actuales.is_empty():
+            return False
+
+        r = self.pila_reservas_actuales.pop()
+        self.pila_deshacer.push(r)
+        self.logs.append(f"Cancelación LIFO: {r.reserva_id}")
+        return True
+
+    def borrar_definitivamente_lifo(self):
+        if self.pila_deshacer.is_empty():
+            return False
+
+        r = self.pila_deshacer.pop()
+        self.logs.append(f"Borrado definitivo: {r.reserva_id}")
+        return True
+
+    def deshacer_cancelacion(self):
+        if self.pila_deshacer.is_empty():
+            return "EMPTY"
+
+        r = self.pila_deshacer.peek()
+
+        disponible = self._habitacion_disponible(
+            r.inicio, r.fin, r.tipo, r.habitacion
+        )
+
+        if not disponible:
+            return "OCCUPIED"
+
+        r = self.pila_deshacer.pop()
+        self.pila_reservas_actuales.push(r)
+        self.logs.append(f"Deshacer cancelación: {r.reserva_id}")
+        return "OK"
+
+    def obtener_estado_por_rango(self, inicio, fin):
+        resultado = []
+
+        for h in self.habitaciones:
+            resultado.append(
+                {
+                    "numero": h["numero"],
+                    "tipo": h["tipo"],
+                    "ocupada": False,
+                }
+            )
+
+        temp = []
+
+        while not self.pila_reservas_actuales.is_empty():
+            r = self.pila_reservas_actuales.pop()
+            temp.append(r)
+
+            for h in resultado:
+                if h["numero"] == r.habitacion:
+                    h["ocupada"] = True
+
+        for r in reversed(temp):
+            self.pila_reservas_actuales.push(r)
+
+        return resultado
+
+    def buscar_reservas(self, query):
+        resultados = []
+        temp = []
+
+        while not self.pila_reservas_actuales.is_empty():
+            r = self.pila_reservas_actuales.pop()
+            temp.append(r)
+
+            if (
+                query.lower() in r.cliente.lower()
+                or query == str(r.reserva_id)
+            ):
+                resultados.append(r.to_dict())
+
+        for r in reversed(temp):
+            self.pila_reservas_actuales.push(r)
+
+        return resultados
+
+    def obtener_logs(self):
+        return self.logs

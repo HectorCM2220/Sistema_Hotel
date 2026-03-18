@@ -2,7 +2,6 @@ from datetime import datetime, timedelta
 from database import DatabaseManager
 from clases import HabitacionFactory, Reserva, PilaPersonalizada, Sujeto, Observador
 
-# --- Implementación del Observador para Logs ---
 class DatabaseLogger(Observador):
     def __init__(self, db_name: str):
         self.db_name = db_name
@@ -90,6 +89,10 @@ class SistemaReservasHotel(Sujeto):
 
     def reservar_habitacion(self, cliente: str, inicio: str, fin: str, tipo: str = None, numero_habitacion: int = None) -> bool:
         if inicio >= fin: return False
+        
+        # Nueva Regla: No permitir fechas pasadas
+        hoy = datetime.now().strftime("%Y-%m-%d")
+        if inicio < hoy: return False
 
         if numero_habitacion:
             hab = next((h for h in self.habitaciones if h.numero == numero_habitacion), None)
@@ -118,13 +121,35 @@ class SistemaReservasHotel(Sujeto):
     def cancelar_reserva_lifo(self) -> bool:
         if self.pila_reservas_actuales.is_empty(): return False
         r = self.pila_reservas_actuales.pop()
+        return self._procesar_cancelacion(r)
+
+    def cancelar_reserva(self, id_reserva: int) -> bool:
+        """Busca una reserva específica por ID y la cancela (la mueve a la pila de deshacer)"""
+        temp = []
+        encontrada = None
+        while not self.pila_reservas_actuales.is_empty():
+            r = self.pila_reservas_actuales.pop()
+            if r.id_reserva == id_reserva:
+                encontrada = r
+                break
+            temp.append(r)
+        
+        # Devolver a la pila las que no eran la buscada
+        for r in reversed(temp):
+            self.pila_reservas_actuales.push(r)
+            
+        if encontrada:
+            return self._procesar_cancelacion(encontrada)
+        return False
+
+    def _procesar_cancelacion(self, r) -> bool:
         self.pila_deshacer.push(r)
         conn = DatabaseManager.get_connection(self.db_name)
         c = conn.cursor()
         c.execute("UPDATE reservas SET estado_pila='DESHACER' WHERE id_reserva=?", (r.id_reserva,))
         conn.commit()
         conn.close()
-        self.notificar(f"CANCELACIÓN (LIFO): Reserva {r.id_reserva} de {r.cliente}")
+        self.notificar(f"CANCELACIÓN: Reserva {r.id_reserva} de {r.cliente}")
         return True
 
     def borrar_definitivamente_lifo(self) -> bool:

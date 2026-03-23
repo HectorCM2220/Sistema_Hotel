@@ -24,7 +24,7 @@ if IS_VERCEL:
 else:
     DB_PATH = os.environ.get("DB_PATH", DB_NAME)
 
-# Crear carpeta static si no existe (silenciosamente)
+
 try:
     if not os.path.exists("static"):
         os.makedirs("static")

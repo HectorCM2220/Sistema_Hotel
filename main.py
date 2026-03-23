@@ -12,7 +12,17 @@ from logica import SistemaReservasHotel
 app = FastAPI(title="Practica Hotel")
 
 # Configuración de la base de datos para Vercel (read-only filesystem except /tmp)
-DB_PATH = os.environ.get("DB_PATH", "hotel_web.db")
+DB_NAME = "hotel_web.db"
+IS_VERCEL = "VERCEL" in os.environ
+
+if IS_VERCEL:
+    DB_PATH = os.path.join("/tmp", DB_NAME)
+    # Copiar la base de datos inicial a /tmp si no existe
+    if not os.path.exists(DB_PATH) and os.path.exists(DB_NAME):
+        import shutil
+        shutil.copy2(DB_NAME, DB_PATH)
+else:
+    DB_PATH = os.environ.get("DB_PATH", DB_NAME)
 
 # Crear carpeta static si no existe (silenciosamente)
 try:

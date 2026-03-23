@@ -11,15 +11,19 @@ from logica import SistemaReservasHotel
 
 app = FastAPI(title="Practica Hotel")
 
+# Configuración de la base de datos para Vercel (read-only filesystem except /tmp)
+DB_PATH = os.environ.get("DB_PATH", "hotel_web.db")
 
-# Crear carpeta static si no existe
-if not os.path.exists("static"):
-    os.makedirs("static")
+# Crear carpeta static si no existe (silenciosamente)
+try:
+    if not os.path.exists("static"):
+        os.makedirs("static")
+except Exception:
+    pass
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
-hotel = SistemaReservasHotel(db_name="hotel_web.db")
+hotel = SistemaReservasHotel(db_name=DB_PATH)
 
 
 @app.get("/")
